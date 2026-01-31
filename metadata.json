@@ -1,0 +1,5 @@
+{
+  "name": "FinCRA",
+  "description": "A high-fidelity regulatory risk assessment platform featuring a no-code rule builder, data schema reference, and batch simulation tools for UK regulatory compliance.",
+  "requestFramePermissions": []
+}

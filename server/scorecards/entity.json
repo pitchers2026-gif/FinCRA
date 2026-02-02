@@ -1,0 +1,16 @@
+{
+  "Limited": 2,
+  "Ltd": 2,
+  "LLP": 2,
+  "PLC": 2,
+  "Partnership": 2,
+  "Sole Trader": 3,
+  "Individual": 3,
+  "Trust": 4,
+  "Foundation": 4,
+  "SPV": 4,
+  "Holding": 3,
+  "Subsidiary": 3,
+  "Branch": 3,
+  "default": 3
+}

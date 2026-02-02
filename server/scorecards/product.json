@@ -1,0 +1,11 @@
+{
+  "current_account": 2,
+  "savings": 2,
+  "deposit": 2,
+  "loan": 3,
+  "mortgage": 3,
+  "trade_finance": 4,
+  "correspondent": 4,
+  "crypto": 5,
+  "default": 3
+}

@@ -129,8 +129,50 @@ const DataReference: React.FC = () => {
             <div className="p-2 bg-slate-100 rounded-lg text-slate-600"><span className="material-symbols-outlined">data_object</span></div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">CRA Record Schema</h2>
           </div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-8 shadow-sm">
-             <p className="text-slate-500 italic">Detailed mapping of internal risk score weights and historical data structures...</p>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">Input fields used by the CRA engine for component scores and override rules. Geography, Industry, Entity, Product, and Delivery feed the weighted pre-override score; sanction/PEP flags trigger overrides.</p>
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm mb-6">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                  <tr>
+                    {['Field', 'Type', 'Pillar', 'Description'].map(h => (
+                      <th key={h} className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                  {[
+                    { field: 'country_code', type: 'String (ISO)', pillar: 'Geography', desc: 'ISO country code for geography scorecard lookup; used for prohibited geography override.' },
+                    { field: 'domicile', type: 'String (ISO)', pillar: 'Geography', desc: 'Alternative to country_code; jurisdiction of incorporation.' },
+                    { field: 'industry_code', type: 'Int / String', pillar: 'Industry', desc: 'SIC or industry classification for industry scorecard lookup.' },
+                    { field: 'industry_description', type: 'String', pillar: 'Industry', desc: 'Free-text industry description; used for crypto/ special industry overrides.' },
+                    { field: 'sic_codes', type: 'Array<Int>', pillar: 'Industry', desc: 'Standard Industrial Classification codes; used for adult/CBD industry overrides.' },
+                    { field: 'entity_type', type: 'String', pillar: 'Entity', desc: 'Entity type (e.g. Limited, LLP) for entity scorecard lookup.' },
+                    { field: 'product_data.type', type: 'String', pillar: 'Product', desc: 'Product or account type for product scorecard lookup.' },
+                    { field: 'product_type', type: 'String', pillar: 'Product', desc: 'Alternative product type field.' },
+                    { field: 'delivery_data.channels', type: 'Array<String>', pillar: 'Delivery', desc: 'Delivery channels (e.g. online, branch); max score across channels.' },
+                  ].map((r, i) => (
+                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4 font-mono text-sm font-medium text-slate-700 dark:text-slate-200">{r.field}</td>
+                      <td className="px-6 py-4"><span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{r.type}</span></td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{r.pillar}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{r.desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+            <h4 className="font-bold text-sm text-amber-800 dark:text-amber-200 mb-2">Override Condition Inputs</h4>
+            <div className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
+              <p><span className="font-mono font-bold">sanction_match</span> (Boolean) — Direct sanctions list match; triggers Sanctions override.</p>
+              <p><span className="font-mono font-bold">sanction_likelihood</span> (Number) — Screening likelihood 0–100; e.g. ≥99 triggers Sanctions override.</p>
+              <p><span className="font-mono font-bold">pep_count</span> (Int) — PEP associations count; &gt;0 triggers PEP/AM override.</p>
+              <p><span className="font-mono font-bold">has_pep</span>, <span className="font-mono font-bold">has_adverse_media</span> (Boolean) — Trigger PEP/AM override.</p>
+              <p><span className="font-mono font-bold">geography_prohibited</span> (Boolean) — Country on prohibited list; triggers Geography prohibited override.</p>
+              <p><span className="font-mono font-bold">bearer_shares</span> (Boolean) — Presence of bearer shares; triggers Bearer shares override.</p>
+            </div>
           </div>
         </section>
 
@@ -141,35 +183,41 @@ const DataReference: React.FC = () => {
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Sample Payload</h2>
             </div>
           </div>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">CRA input schema for batch simulation. Each record is scored using the 5 pillars and override rules.</p>
           <div className="relative bg-slate-900 rounded-xl overflow-hidden shadow-2xl">
             <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-800 bg-slate-900/50">
               <div className="w-3 h-3 rounded-full bg-red-500/50"></div>
               <div className="w-3 h-3 rounded-full bg-amber-500/50"></div>
               <div className="w-3 h-3 rounded-full bg-emerald-500/50"></div>
-              <span className="ml-4 text-xs font-mono text-slate-500">cra_payload_v1.0.json</span>
+              <span className="ml-4 text-xs font-mono text-slate-500">cra_batch_input_v1.0.json</span>
             </div>
             <pre className="p-6 overflow-x-auto font-mono text-sm leading-relaxed text-slate-300 code-scrollbar">
-              <code>{`{
-  "entity": {
-    "id": "UK-8921-X",
-    "name": "Acme Global UK Ltd",
-    "registration_number": "08234123",
-    "incorporation_date": "2012-05-14T00:00:00Z",
-    "sic_codes": [6201, 6202]
+              <code>{`[
+  {
+    "record_id": "UK-2024-001",
+    "entity_name": "Sterling Capital Partners",
+    "country_code": "GB",
+    "domicile": "GB",
+    "industry_code": 6201,
+    "entity_type": "Limited",
+    "product_data": { "type": "corporate_account" },
+    "delivery_data": { "channels": ["online", "branch"] },
+    "pep_count": 0,
+    "sanction_match": false
   },
-  "key_parties": [
-    {
-      "party_name": "Jane Doe",
-      "role": "Director",
-      "ownership_pct": 51.0,
-      "pep_status": false
-    }
-  ],
-  "risk_context": {
-    "jurisdiction": "GB",
-    "risk_rating": 740
+  {
+    "record_id": "UK-2024-002",
+    "entity_name": "Global Horizon Holdings",
+    "country_code": "VG",
+    "domicile": "VG",
+    "industry_code": 6499,
+    "entity_type": "Limited",
+    "product_data": { "type": "investment_account" },
+    "delivery_data": { "channels": ["online"] },
+    "pep_count": 2,
+    "sanction_match": false
   }
-}`}</code>
+]`}</code>
             </pre>
           </div>
         </section>

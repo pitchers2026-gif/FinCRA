@@ -1,17 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { loadCRAEngineConfig } from '../services/craEngineConfig';
+import { calculateCRA, CRAInput, CRAOutput } from '../services/craCalculator';
+import { calculateCRAViaApi, checkCRAApiHealth } from '../services/craApi';
+import { getRuleSetSummary } from '../services/craRuleSetSummary';
+import { FCA_PREDEFINED_RULES } from '../services/fcaPredefinedRules';
 
 interface SavedRule {
   id: string;
   name: string;
   description: string;
-}
-
-interface SimulationResult {
-  record_id: string;
-  entity_name: string;
-  risk_score: number;
-  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  findings: string[];
 }
 
 const Simulations: React.FC = () => {
@@ -21,7 +18,10 @@ const Simulations: React.FC = () => {
   const [jsonInput, setJsonInput] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationProgress, setSimulationProgress] = useState(0);
-  const [results, setResults] = useState<SimulationResult[]>([]);
+  const [results, setResults] = useState<CRAOutput[]>([]);
+  const [useBackendApi, setUseBackendApi] = useState(false);
+  const [apiReachable, setApiReachable] = useState<boolean | null>(null);
+  const [showRuleSetSummary, setShowRuleSetSummary] = useState(false);
 
   useEffect(() => {
     const rulesRaw = localStorage.getItem('cra_saved_rules');
@@ -31,11 +31,19 @@ const Simulations: React.FC = () => {
     }
   }, []);
 
-  const defaultFrameworks = [
-    { id: 'def-1', name: 'UK AML 2024 - High Net Worth Individuals' },
-    { id: 'def-2', name: 'FCA Handbook - Consumer Credit Risk' },
-    { id: 'def-3', name: 'UK Sanctions List Screening' },
-  ];
+  useEffect(() => {
+    if (!useBackendApi) {
+      setApiReachable(null);
+      return;
+    }
+    let cancelled = false;
+    checkCRAApiHealth().then((ok) => {
+      if (!cancelled) setApiReachable(ok);
+    });
+    return () => { cancelled = true; };
+  }, [useBackendApi]);
+
+  const predefinedRules = useMemo(() => FCA_PREDEFINED_RULES.map((r) => ({ id: r.id, name: r.name })), []);
 
   // Dynamic progress calculation for the input phase
   const formProgress = useMemo(() => {
@@ -46,57 +54,73 @@ const Simulations: React.FC = () => {
   }, [selectedRuleId, jsonInput]);
 
   const handleGenerateSampleData = () => {
-    const sampleData = [
+    const sampleData: CRAInput[] = [
       {
-        "record_id": "UK-2024-001",
-        "entity_name": "Sterling Capital Partners",
-        "domicile": "GB",
-        "pep_count": 0,
-        "sanction_match": false,
-        "transaction_volume": 1250000,
-        "risk_profile": "Standard"
+        record_id: "UK-2024-001",
+        entity_name: "Sterling Capital Partners",
+        country_code: "GB",
+        domicile: "GB",
+        industry_code: 6201,
+        entity_type: "Limited",
+        product_data: { type: "corporate_account" },
+        delivery_data: { channels: ["online", "branch"] },
+        pep_count: 0,
+        sanction_match: false,
       },
       {
-        "record_id": "UK-2024-002",
-        "entity_name": "Global Horizon Holdings",
-        "domicile": "VG",
-        "pep_count": 2,
-        "sanction_match": false,
-        "transaction_volume": 8500000,
-        "risk_profile": "High"
+        record_id: "UK-2024-002",
+        entity_name: "Global Horizon Holdings",
+        country_code: "VG",
+        domicile: "VG",
+        industry_code: 6499,
+        entity_type: "Limited",
+        product_data: { type: "investment_account" },
+        delivery_data: { channels: ["online"] },
+        pep_count: 2,
+        sanction_match: false,
       },
       {
-        "record_id": "UK-2024-003",
-        "entity_name": "Astra Ventures Ltd",
-        "domicile": "GB",
-        "pep_count": 1,
-        "sanction_match": true,
-        "transaction_volume": 45000,
-        "risk_profile": "Critical"
+        record_id: "UK-2024-003",
+        entity_name: "Astra Ventures Ltd",
+        country_code: "GB",
+        domicile: "GB",
+        industry_code: 6201,
+        entity_type: "Limited",
+        product_data: { type: "corporate_account" },
+        delivery_data: { channels: ["branch"] },
+        pep_count: 1,
+        sanction_match: true,
       },
       {
-        "record_id": "UK-2024-004",
-        "entity_name": "Riviera Yacht Charters",
-        "domicile": "MC",
-        "pep_count": 1,
-        "sanction_match": false,
-        "transaction_volume": 4500000,
-        "risk_profile": "Medium"
+        record_id: "UK-2024-004",
+        entity_name: "Riviera Yacht Charters",
+        country_code: "MC",
+        domicile: "MC",
+        industry_code: 7711,
+        entity_type: "Limited",
+        product_data: { type: "corporate_account" },
+        delivery_data: { channels: ["online", "branch"] },
+        pep_count: 1,
+        sanction_match: false,
       },
       {
-        "record_id": "UK-2024-005",
-        "entity_name": "Local Tech Solutions",
-        "domicile": "GB",
-        "pep_count": 0,
-        "sanction_match": false,
-        "transaction_volume": 12000,
-        "risk_profile": "Standard"
-      }
+        record_id: "UK-2024-005",
+        entity_name: "Local Tech Solutions",
+        country_code: "GB",
+        domicile: "GB",
+        industry_code: 6201,
+        industry_description: "Software development",
+        entity_type: "Limited",
+        product_data: { type: "retail_account" },
+        delivery_data: { channels: ["online"] },
+        pep_count: 0,
+        sanction_match: false,
+      },
     ];
     setJsonInput(JSON.stringify(sampleData, null, 2));
   };
 
-  const runSimulation = () => {
+  const runSimulation = async () => {
     if (!jsonInput || !selectedRuleId) return;
     setIsSimulating(true);
     setSimulationProgress(0);
@@ -111,52 +135,26 @@ const Simulations: React.FC = () => {
       });
     }, 100);
 
-    setTimeout(() => {
-      try {
-        const data = JSON.parse(jsonInput);
-        const processed: SimulationResult[] = data.map((item: any) => {
-          let score = Math.floor(Math.random() * 40);
-          const findings = [];
-
-          if (item.pep_count > 0) {
-            score += 30;
-            findings.push(`${item.pep_count} PEP associations found`);
-          }
-          if (item.sanction_match) {
-            score += 50;
-            findings.push('Direct Sanctions List match identified');
-          }
-          if (item.domicile !== 'GB') {
-            score += 15;
-            findings.push('Non-UK high risk jurisdiction');
-          }
-          if (item.transaction_volume > 1000000) {
-            score += 10;
-            findings.push('High value transaction volume');
-          }
-
-          let level: SimulationResult['risk_level'] = 'LOW';
-          if (score >= 80) level = 'CRITICAL';
-          else if (score >= 60) level = 'HIGH';
-          else if (score >= 40) level = 'MEDIUM';
-
-          return {
-            record_id: item.record_id || 'ID-' + Math.random().toString(36).substr(2, 5),
-            entity_name: item.entity_name || 'Unknown Entity',
-            risk_score: Math.min(score, 100),
-            risk_level: level,
-            findings
-          };
-        });
-
-        setResults(processed);
-        setStep(3);
-        setIsSimulating(false);
-      } catch (e) {
-        alert("Invalid JSON data provided.");
-        setIsSimulating(false);
+    try {
+      const data = JSON.parse(jsonInput) as CRAInput[];
+      const config = loadCRAEngineConfig();
+      let processed: CRAOutput[];
+      if (useBackendApi) {
+        try {
+          processed = await Promise.all(data.map((item) => calculateCRAViaApi(item, config)));
+        } catch {
+          processed = data.map((item) => calculateCRA(item, config));
+        }
+      } else {
+        processed = data.map((item) => calculateCRA(item, config));
       }
-    }, 2500);
+      setResults(processed);
+      setStep(3);
+    } catch (e) {
+      alert('Invalid JSON data provided.');
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   const resetSimulation = () => {
@@ -164,7 +162,7 @@ const Simulations: React.FC = () => {
     setResults([]);
   };
 
-  const selectedRuleName = [...defaultFrameworks, ...savedRules].find(r => r.id === selectedRuleId)?.name || 'None selected';
+  const selectedRuleName = [...predefinedRules, ...savedRules].find(r => r.id === selectedRuleId)?.name || 'None selected';
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background-light dark:bg-background-dark p-8">
@@ -242,18 +240,16 @@ const Simulations: React.FC = () => {
                       onChange={(e) => setSelectedRuleId(e.target.value)}
                     >
                       <option value="">-- Choose a Rule --</option>
-                      <optgroup label="System Default Frameworks">
-                        {defaultFrameworks.map(df => (
-                          <option key={df.id} value={df.id}>{df.name}</option>
+                      <optgroup label="FCA & UK Compliance Templates">
+                        {predefinedRules.map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
                         ))}
                       </optgroup>
-                      {savedRules.length > 0 && (
-                        <optgroup label="Custom Saved Rules (from Rule Builder)">
-                          {savedRules.map(sr => (
-                            <option key={sr.id} value={sr.id}>{sr.name}</option>
-                          ))}
-                        </optgroup>
-                      )}
+                      <optgroup label="My Rules">
+                        {savedRules.map((sr) => (
+                          <option key={sr.id} value={sr.id}>{sr.name}</option>
+                        ))}
+                      </optgroup>
                     </select>
                   </div>
                 </section>
@@ -282,7 +278,7 @@ const Simulations: React.FC = () => {
                       </div>
                       <textarea 
                         className="w-full rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono p-4 focus:ring-amber-500 focus:border-amber-500 transition-all shadow-inner" 
-                        placeholder='[{"record_id": "UK-9921", "name": "Sterling Corp", "domicile": "GB"}]' 
+                        placeholder='[{"record_id": "UK-001", "entity_name": "Acme Ltd", "country_code": "GB", "industry_code": 6201, "entity_type": "Limited", "pep_count": 0, "sanction_match": false}]' 
                         rows={8}
                         value={jsonInput}
                         onChange={(e) => setJsonInput(e.target.value)}
@@ -303,12 +299,66 @@ const Simulations: React.FC = () => {
                     <div>
                       <p className="text-xs font-semibold text-slate-400">Total Entries</p>
                       <p className="text-sm font-bold mt-1">
-                        {jsonInput ? (JSON.parse(jsonInput || '[]').length || 0) : '0'} Records
+                        {jsonInput ? (() => { try { return (JSON.parse(jsonInput || '[]') as unknown[]).length; } catch { return 0; } })() : 0} Records
                       </p>
                     </div>
-                    <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowRuleSetSummary((s) => !s)}
+                        className="flex items-center justify-between w-full text-left text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                      >
+                        <span>Rule set summary</span>
+                        <span className={`material-symbols-outlined !text-sm transition-transform ${showRuleSetSummary ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                      {showRuleSetSummary ? (
+                        (() => {
+                          const summary = getRuleSetSummary(loadCRAEngineConfig());
+                          return (
+                            <div className="mt-3 space-y-3 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                              <p>{summary.intro}</p>
+                              <p><span className="font-semibold text-slate-500 dark:text-slate-300">Weights:</span> {summary.weights}</p>
+                              <p><span className="font-semibold text-slate-500 dark:text-slate-300">Geography first:</span> {summary.geographyFirst}</p>
+                              <div>
+                                <span className="font-semibold text-slate-500 dark:text-slate-300">Overrides (priority order):</span>
+                                {summary.overrides.length === 0 ? (
+                                  <p className="mt-1">No overrides; only the weighted score and geography check apply.</p>
+                                ) : (
+                                  <ul className="mt-1 list-decimal list-inside space-y-0.5">
+                                    {summary.overrides.map((o) => (
+                                      <li key={o.priority}>{o.name} ({o.conditionLabel}) → score {o.resultScore}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                              <p><span className="font-semibold text-slate-500 dark:text-slate-300">Risk bands:</span> {summary.riskBands}</p>
+                              <p><span className="font-semibold text-slate-500 dark:text-slate-300">Prohibited countries:</span> {summary.prohibitedCountries}</p>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <p className="mt-2 text-[10px] text-slate-500 dark:text-slate-500">
+                          Score from 5 factors + overrides; {(() => { const c = loadCRAEngineConfig(); return c.overrideRules.length; })()} overrides, {loadCRAEngineConfig().riskBands.length} risk bands.
+                        </p>
+                      )}
+                    </div>
+                    <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                      <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useBackendApi}
+                          onChange={(e) => setUseBackendApi(e.target.checked)}
+                          className="rounded border-slate-300 text-primary focus:ring-primary"
+                        />
+                        Use backend API (scorecards + full conditions)
+                      </label>
+                      {useBackendApi && apiReachable !== null && (
+                        <p className={`text-[10px] font-bold ${apiReachable ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          Backend API: {apiReachable ? 'reachable' : 'unreachable — run npm run server or npm run dev:all'}
+                        </p>
+                      )}
                       <button 
-                        onClick={runSimulation}
+                        onClick={() => runSimulation()}
                         disabled={!jsonInput || !selectedRuleId}
                         className={`w-full text-white font-black py-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-lg ${jsonInput && selectedRuleId ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 active:scale-95' : 'bg-slate-300 cursor-not-allowed shadow-none'}`}
                       >
@@ -347,13 +397,13 @@ const Simulations: React.FC = () => {
                 <p className="text-2xl font-black text-slate-900 dark:text-white">{results.length}</p>
               </div>
               <div className="bg-white dark:bg-[#1a202c] p-5 border border-slate-200 dark:border-slate-800 rounded-xl">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">High Risks</p>
-                <p className="text-2xl font-black text-red-600">{results.filter(r => r.risk_level === 'HIGH' || r.risk_level === 'CRITICAL').length}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">High / Very High Risk</p>
+                <p className="text-2xl font-black text-red-600">{results.filter(r => r.final_score >= 4).length}</p>
               </div>
               <div className="bg-white dark:bg-[#1a202c] p-5 border border-slate-200 dark:border-slate-800 rounded-xl">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Risk Score</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg CRA Score (1-5)</p>
                 <p className="text-2xl font-black text-slate-900 dark:text-white">
-                  {results.length > 0 ? Math.round(results.reduce((acc, curr) => acc + curr.risk_score, 0) / results.length) : 0}%
+                  {results.length > 0 ? (results.reduce((acc, curr) => acc + curr.final_score, 0) / results.length).toFixed(2) : '-'}
                 </p>
               </div>
               <div className="bg-amber-500 p-5 border border-amber-600 rounded-xl text-white shadow-lg shadow-amber-500/20">
@@ -368,8 +418,8 @@ const Simulations: React.FC = () => {
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800">
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Entity & ID</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Risk Score</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Level</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">CRA Score (1-5)</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Risk Band</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Findings</th>
                   </tr>
                 </thead>
@@ -382,19 +432,18 @@ const Simulations: React.FC = () => {
                       </td>
                       <td className="px-6 py-5 text-center">
                         <span className={`text-lg font-black ${
-                          res.risk_score > 70 ? 'text-red-600' : res.risk_score > 40 ? 'text-amber-500' : 'text-emerald-600'
+                          res.final_score >= 4 ? 'text-red-600' : res.final_score >= 3 ? 'text-amber-500' : 'text-emerald-600'
                         }`}>
-                          {res.risk_score}%
+                          {res.final_score}
                         </span>
                       </td>
                       <td className="px-6 py-5">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tight ${
-                          res.risk_level === 'CRITICAL' ? 'bg-red-600 text-white' :
-                          res.risk_level === 'HIGH' ? 'bg-orange-100 text-orange-700' :
-                          res.risk_level === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
-                          'bg-emerald-100 text-emerald-700'
+                          res.risk_band.toLowerCase().includes('very high') || res.risk_band.toLowerCase().includes('high') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                          res.risk_band.toLowerCase().includes('medium') ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                          'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                         }`}>
-                          {res.risk_level}
+                          {res.risk_band}
                         </span>
                       </td>
                       <td className="px-6 py-5">
